@@ -259,13 +259,13 @@ if __name__ == '__main__':
         fp_model.cuda()  # 将复制的模型移动到GPU上
         fp_model.eval()  # 设置复制的模型为评估模式
 
-        # build quantization parameters
+        # # build quantization parameters
         wq_params = {'n_bits': qnn_args.n_bits_w, 'channel_wise': qnn_args.channel_wise,
                      'scale_method': qnn_args.init_wmode}
         aq_params = {'n_bits': qnn_args.n_bits_a, 'channel_wise': False, 'scale_method': qnn_args.init_amode,
                      'leaf_param': True, 'prob': qnn_args.prob}
 
-        fp_model = QuantModel(model=fp_model, weight_quant_params=wq_params, act_quant_params=aq_params,
+        fp_model = QuantModel(model=origin_model, weight_quant_params=wq_params, act_quant_params=aq_params,
                               is_fusing=False)
         fp_model.cuda()
         fp_model.eval()
@@ -349,12 +349,12 @@ if __name__ == '__main__':
             开始校准
         """
         # Start calibration
-        # recon_model(qnn, fp_model)
+        recon_model(qnn, fp_model)
         #
         """qnn设置量化状态为True"""
         qnn.set_quant_state(weight_quant=True, act_quant=True)
 
-        return fp_model
+        return qnn
 
     qnn = get_qnn_model(args, cnn)
 
