@@ -6,5 +6,6 @@
 *.npy
 *.pth
 .DS_Store
+./idea
 __pycache__
 model_zoo
