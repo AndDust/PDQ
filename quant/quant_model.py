@@ -188,7 +188,7 @@ class QuantModel(nn.Module):
                     continue
                 """如果找到nn.ReLU或nn.ReLU6层，并且在此之前有一个QuantModule，则将激活函数与前一个QuantModule相关联，并用StraightThrough层替换原始的激活函数层。"""
             elif isinstance(child_module, (nn.ReLU, nn.ReLU6)):
-                if prev_quantmodule is not None:
+                if prev_quantmodule is not None and name is not "relu_after_ds":
                     prev_quantmodule.activation_function = child_module
                     setattr(module, name, StraightThrough())
                 else:
