@@ -150,9 +150,9 @@ if __name__ == '__main__':
     parser.add_argument('--data_path', default='/home/nku524/dl/dataset/imageNet-1k', type=str, help='path to ImageNet data')
 
     # quantization parameters
-    parser.add_argument('--n_bits_w', default=4, type=int, help='bitwidth for weight quantization')
+    parser.add_argument('--n_bits_w', default=8, type=int, help='bitwidth for weight quantization')
     parser.add_argument('--channel_wise', default=True, help='apply channel_wise quantization for weights')
-    parser.add_argument('--n_bits_a', default=4, type=int, help='bitwidth for activation quantization')
+    parser.add_argument('--n_bits_a', default=8, type=int, help='bitwidth for activation quantization')
     parser.add_argument('--disable_8bit_head_stem', action='store_true')
 
     # weight calibration parameters
@@ -189,66 +189,175 @@ if __name__ == '__main__':
     cnn = eval('hubconf.{}(pretrained=True)'.format(args.arch))
     cnn.cuda()
     cnn.eval()
-    fp_model = copy.deepcopy(cnn)
-    fp_model.cuda()
-    fp_model.eval()
+    # fp_model = copy.deepcopy(cnn)
+    # fp_model.cuda()
+    # fp_model.eval()
+    #
+    # # build quantization parameters
+    # wq_params = {'n_bits': args.n_bits_w, 'channel_wise': args.channel_wise, 'scale_method': args.init_wmode}
+    # aq_params = {'n_bits': args.n_bits_a, 'channel_wise': False, 'scale_method': args.init_amode,
+    #              'leaf_param': True, 'prob': args.prob}
+    #
+    # fp_model = QuantModel(model=fp_model, weight_quant_params=wq_params, act_quant_params=aq_params, is_fusing=False)
+    # fp_model.cuda()
+    # fp_model.eval()
+    # fp_model.set_quant_state(False, False)
+    # qnn = QuantModel(model=cnn, weight_quant_params=wq_params, act_quant_params=aq_params)
+    # qnn.cuda()
+    # qnn.eval()
+    # if not args.disable_8bit_head_stem:
+    #     print('Setting the first and the last layer to 8-bit')
+    #     qnn.set_first_last_layer_to_8bit()
+    #
+    # qnn.disable_network_output_quantization()
+    # print('the quantized model is below!')
+    # print(qnn)
+    # cali_data, cali_target = get_train_samples(train_loader, num_samples=args.num_samples)
+    # device = next(qnn.parameters()).device
+    #
+    # # Kwargs for weight rounding calibration
+    # kwargs = dict(cali_data=cali_data, iters=args.iters_w, weight=args.weight,
+    #             b_range=(args.b_start, args.b_end), warmup=args.warmup, opt_mode='mse',
+    #             lr=args.lr, input_prob=args.input_prob, keep_gpu=not args.keep_cpu,
+    #             lamb_r=args.lamb_r, T=args.T, bn_lr=args.bn_lr, lamb_c=args.lamb_c)
+    #
+    #
+    # '''init weight quantizer'''
+    # set_weight_quantize_params(qnn)
+    #
+    # def set_weight_act_quantize_params(module, fp_module):
+    #     if isinstance(module, QuantModule):
+    #         layer_reconstruction(module)
+    #     elif isinstance(module, BaseQuantBlock):
+    #         pass
+    #     else:
+    #         raise NotImplementedError
+    # def recon_model(model: nn.Module, fp_model: nn.Module):
+    #     """
+    #     Block reconstruction. For the first and last layers, we can only apply layer reconstruction.
+    #     """
+    #     for (name, module), (_, fp_module) in zip(model.named_children(), fp_model.named_children()):
+    #         if isinstance(module, QuantModule):
+    #             print('Reconstruction for layer {}'.format(name))
+    #             set_weight_act_quantize_params(module, fp_module)
+    #         elif isinstance(module, BaseQuantBlock):
+    #             print('Reconstruction for block {}'.format(name))
+    #             set_weight_act_quantize_params(module, fp_module)
+    #         else:
+    #             recon_model(module, fp_module)
+    # # Start calibration
+    # recon_model(qnn, fp_model)
+    #
+    # qnn.set_quant_state(weight_quant=True, act_quant=True)
 
-    # build quantization parameters
-    wq_params = {'n_bits': args.n_bits_w, 'channel_wise': args.channel_wise, 'scale_method': args.init_wmode}
-    aq_params = {'n_bits': args.n_bits_a, 'channel_wise': False, 'scale_method': args.init_amode,
-                 'leaf_param': True, 'prob': args.prob}
+    def get_qnn_model(qnn_args, origin_model):
+        # TODO 加载模型
+        origin_model.cuda()  # 将模型移动到GPU上
+        origin_model.eval()  # 设置模型为评估模式
 
-    fp_model = QuantModel(model=fp_model, weight_quant_params=wq_params, act_quant_params=aq_params, is_fusing=False)
-    fp_model.cuda()
-    fp_model.eval()
-    fp_model.set_quant_state(False, False)
-    qnn = QuantModel(model=cnn, weight_quant_params=wq_params, act_quant_params=aq_params)
-    qnn.cuda()
-    qnn.eval()
-    if not args.disable_8bit_head_stem:
-        print('Setting the first and the last layer to 8-bit')
-        qnn.set_first_last_layer_to_8bit()
+        fp_model = copy.deepcopy(origin_model)  # 深度复制模型
+        fp_model.cuda()  # 将复制的模型移动到GPU上
+        fp_model.eval()  # 设置复制的模型为评估模式
 
-    qnn.disable_network_output_quantization()
-    print('the quantized model is below!')
-    print(qnn)
-    cali_data, cali_target = get_train_samples(train_loader, num_samples=args.num_samples)
-    device = next(qnn.parameters()).device
+        # build quantization parameters
+        wq_params = {'n_bits': qnn_args.n_bits_w, 'channel_wise': qnn_args.channel_wise,
+                     'scale_method': qnn_args.init_wmode}
+        aq_params = {'n_bits': qnn_args.n_bits_a, 'channel_wise': False, 'scale_method': qnn_args.init_amode,
+                     'leaf_param': True, 'prob': qnn_args.prob}
 
-    # Kwargs for weight rounding calibration
-    kwargs = dict(cali_data=cali_data, iters=args.iters_w, weight=args.weight,
-                b_range=(args.b_start, args.b_end), warmup=args.warmup, opt_mode='mse',
-                lr=args.lr, input_prob=args.input_prob, keep_gpu=not args.keep_cpu, 
-                lamb_r=args.lamb_r, T=args.T, bn_lr=args.bn_lr, lamb_c=args.lamb_c)
+        fp_model = QuantModel(model=fp_model, weight_quant_params=wq_params, act_quant_params=aq_params,
+                              is_fusing=False)
+        fp_model.cuda()
+        fp_model.eval()
+        """fp_model只是用来对比，不需要开启量化"""
+        fp_model.set_quant_state(False, False)  # 关闭量化状态
 
-
-    '''init weight quantizer'''
-    set_weight_quantize_params(qnn)
-
-    def set_weight_act_quantize_params(module, fp_module):
-        if isinstance(module, QuantModule):
-            layer_reconstruction(qnn, fp_model, module, fp_module, **kwargs)
-        elif isinstance(module, BaseQuantBlock):
-            block_reconstruction(qnn, fp_model, module, fp_module, **kwargs)
-        else:
-            raise NotImplementedError
-    def recon_model(model: nn.Module, fp_model: nn.Module):
         """
-        Block reconstruction. For the first and last layers, we can only apply layer reconstruction.
+           qnn是经过BN fold和开启量化状态的 （is_fusing=True）
         """
-        for (name, module), (_, fp_module) in zip(model.named_children(), fp_model.named_children()):
+        qnn = QuantModel(model=origin_model, weight_quant_params=wq_params, act_quant_params=aq_params, is_fusing=False)
+        qnn.cuda()
+        qnn.eval()
+
+        if not qnn_args.disable_8bit_head_stem:
+            print('Setting the first and the last layer to 8-bit')
+            qnn.set_first_last_layer_to_8bit()
+
+        """禁用神经网络中最后一个量化模块（QuantModule）的激活量化。"""
+        qnn.disable_network_output_quantization()
+
+        """得到量化后的模型"""
+        print('the quantized model is below!')
+        print(qnn)
+
+        # PointRCNN_dataloader = create_PointRCNN_dataloader(logger)
+        # pointnet_cali_data = get_train_samples(PointRCNN_dataloader, num_samples=args.pointRCNN_num_samples)
+
+        # cali_data, cali_target = get_rain_samples(train_loader, num_samples=args.num_samples)
+        # device = next(qnn.parameters()).device
+
+        # Kwargs for weight rounding calibration
+        """
+            用于权重舍入校准的Kwargs
+        """
+        # kwargs = dict(cali_data=pointnet_cali_data, iters=args.iters_w, weight=args.weight,
+        #               b_range=(args.b_start, args.b_end), warmup=args.warmup, opt_mode='mse',
+        #               lr=args.lr, input_prob=args.input_prob, keep_gpu=not args.keep_cpu,
+        #               lamb_r=args.lamb_r, T=args.T, bn_lr=args.bn_lr, lamb_c=args.lamb_c, a_count=args.a_count)
+
+        set_weight_quantize_params(qnn)
+
+        """
+            重建: 重建就是让量化模型和FP模型的输出尽量保持一致,对量化模型的算子进行了重建,因为直接量化性能下降很多
+        """
+
+        def set_weight_act_quantize_params(module, fp_module):
             if isinstance(module, QuantModule):
-                print('Reconstruction for layer {}'.format(name))
-                set_weight_act_quantize_params(module, fp_module)
+                """
+                    传入完整的qnn、fp_model和当前的module、fp_module
+                """
+                # layer_reconstruction(qnn, fp_model, module, fp_module, **kwargs)
+                layer_reconstruction(module)
+                print("+++______++++++++++_________+++++++++")
             elif isinstance(module, BaseQuantBlock):
-                print('Reconstruction for block {}'.format(name))
-                set_weight_act_quantize_params(module, fp_module)
+                # block_reconstruction(qnn, fp_model, module, fp_module, **kwargs)
+                pass
             else:
-                recon_model(module, fp_module)
-    # Start calibration
-    recon_model(qnn, fp_model)
+                raise NotImplementedError
 
-    qnn.set_quant_state(weight_quant=True, act_quant=True)
+        """
+            区块重建。对于第一层和最后一层，我们只能应用层重建。
+        """
+
+        # a_count = 0
+        def recon_model(model: nn.Module, fp_model: nn.Module):
+            """
+                Block reconstruction. For the first and last layers, we can only apply layer reconstruction.
+            """
+            for (name, module), (_, fp_module) in zip(model.named_children(), fp_model.named_children()):
+                if isinstance(module, QuantModule):
+                    print('Reconstruction for layer {}'.format(name))
+                    set_weight_act_quantize_params(module, fp_module)
+                elif isinstance(module, BaseQuantBlock):
+                    """比如对于ResNet里的包含conv BN Relu的block，在block层面再做一次"""
+                    print('Reconstruction for block {}'.format(name))
+                    set_weight_act_quantize_params(module, fp_module)
+                else:
+                    recon_model(module, fp_module)
+
+        """
+            开始校准
+        """
+        # Start calibration
+        # recon_model(qnn, fp_model)
+        #
+        """qnn设置量化状态为True"""
+        qnn.set_quant_state(weight_quant=True, act_quant=True)
+
+        return fp_model
+
+    qnn = get_qnn_model(args, cnn)
+
     print('Full quantization (W{}A{}) accuracy: {}'.format(args.n_bits_w, args.n_bits_a,
                                                            validate_model(test_loader, qnn)))
 
